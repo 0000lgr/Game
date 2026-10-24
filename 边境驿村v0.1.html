@@ -1,0 +1,218 @@
+<!DOCTYPEhtml>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>边境驿村 · 初期原型</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #1d2a22; color: #e8f0e6;
+  }
+  #app { max-width: 860px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  h1 .sub { font-size: 13px; color: #9fb8a4; font-weight: normal; }
+  .panel {
+    background: #263b2e; border: 1px solid #3d5a46;
+    border-radius: 12px; padding: 14px; margin-top: 14px;
+  }
+  #status {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .stat {
+    background: #1b2b21; border-radius: 8px; padding: 8px 10px;
+    font-size: 14px; color: #b9cdbb;
+  }
+  .stat b { color: #f2e6b6; font-size: 18px; }
+  #builds { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  button {
+    background: #3f6b4d; color: #fff; border: 0; border-radius: 8px;
+    padding: 10px 14px; cursor: pointer; font: inherit;
+    text-align: left; line-height: 1.5;
+  }
+  button:hover:not(:disabled) { background: #4f825f; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #next {
+    width: 100%; margin-top: 14px; padding: 14px;
+    font-size: 17px; font-weight: bold; text-align: center;
+    background: #8a6d2f;
+  }
+  #next:hover:not(:disabled) { background: #a98639; }
+  #log {
+    height: 220px; overflow-y: auto; font-size: 14px;
+    line-height: 1.7; color: #c9dccb;
+  }
+  #log div { border-bottom: 1px dashed #34503d; padding: 3px 0; }
+  small { color: #b7cbb9; }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>边境驿村 <span class="sub">初期原型 v0.1</span></h1>
+
+  <div id="status" class="panel"></div>
+  <button id="next" onclick="nextDay()">进入下一天</button>
+
+  <div class="panel">
+    <h2>建造</h2>
+    <div id="builds"></div>
+  </div>
+
+  <div class="panel">
+    <h2>日志</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const state = {
+  day: 1,
+  gold: 50,
+  food: 30,
+  wood: 25,
+  farms: 0,
+  lumber: 0,
+  towers: 0,
+  walls: 0,
+  warehouses: 0,
+  log: [],
+  over: false
+};
+
+const BUILD = {
+  farm:      { name: '农田',   cost: { wood: 5, gold: 10 },  desc: '每天 +4 粮食' },
+  lumber:    { name: '伐木场', cost: { gold: 15 },           desc: '每天 +3 木材' },
+  tower:     { name: '箭塔',   cost: { wood: 20, gold: 25 }, desc: '防御 +6' },
+  wall:      { name: '围墙',   cost: { wood: 10, gold: 8 },  desc: '防御 +3' },
+  warehouse: { name: '仓库',   cost: { wood: 15, gold: 20 }, desc: '被抢损失 -8%' }
+};
+
+function canPay(cost) {
+  return (cost.gold || 0) <= state.gold &&
+         (cost.wood || 0) <= state.wood &&
+         (cost.food || 0) <= state.food;
+}
+
+function pay(cost) {
+  state.gold -= cost.gold || 0;
+  state.wood -= cost.wood || 0;
+  state.food -= cost.food || 0;
+}
+
+function addLog(text) {
+  state.log.unshift(`第 ${state.day} 天：${text}`);
+  if (state.log.length > 30) state.log.pop();
+}
+
+function defense() {
+  return state.towers * 6 + state.walls * 3;
+}
+
+function raidPower() {
+  return 4 + Math.floor(state.day * 0.6);
+}
+
+function lossRate() {
+  return Math.max(0.15, 0.45 - state.warehouses * 0.08);
+}
+
+function render() {
+  document.getElementById('status').innerHTML = `
+    <div class="stat">天数 <b>${state.day}</b> / 30</div>
+    <div class="stat">金币 <b>${Math.floor(state.gold)}</b></div>
+    <div class="stat">粮食 <b>${Math.floor(state.food)}</b></div>
+    <div class="stat">木材 <b>${Math.floor(state.wood)}</b></div>
+    <div class="stat">防御 <b>${defense()}</b></div>
+    <div class="stat">下次劫掠 <b>${state.day % 4 === 0 ? '今天' : `${4 - state.day % 4} 天后`}</b></div>
+    <div class="stat">农田 ${state.farms} · 伐木场 ${state.lumber} · 箭塔 ${state.towers} · 围墙 ${state.walls} · 仓库 ${state.warehouses}</div>
+  `;
+
+  document.getElementById('builds').innerHTML = Object.entries(BUILD).map(([key, item]) => {
+    const costText = Object.entries(item.cost)
+      .map(([r, v]) => `${r === 'gold' ? '金' : r === 'wood' ? '木' : '粮'}${v}`)
+      .join(' ');
+    return `<button onclick="build('${key}')" ${canPay(item.cost) && !state.over ? '' : 'disabled'}>
+      <b>${item.name}</b><br>
+      <small>${item.desc}<br>${costText}</small>
+    </button>`;
+  }).join('');
+
+  document.getElementById('log').innerHTML =
+    state.log.map(x => `<div>${x}</div>`).join('') || '<div>尚无记录。</div>';
+
+  document.getElementById('next').disabled = state.over;
+}
+
+function build(type) {
+  if (state.over) return;
+  const item = BUILD[type];
+  if (!canPay(item.cost)) {
+    addLog(`资源不足，无法建造${item.name}`);
+    render();
+    return;
+  }
+  pay(item.cost);
+  if (type === 'farm') state.farms++;
+  if (type === 'lumber') state.lumber++;
+  if (type === 'tower') state.towers++;
+  if (type === 'wall') state.walls++;
+  if (type === 'warehouse') state.warehouses++;
+  addLog(`建造了${item.name}`);
+  render();
+}
+
+function nextDay() {
+  if (state.over) return;
+
+  state.day++;
+
+  // 每日生产
+  state.food += state.farms * 4;
+  state.wood += state.lumber * 3;
+  state.gold += 2;
+
+  // 每日消耗
+  state.food -= 4;
+  if (state.food < 0) {
+    state.food = 0;
+    addLog('粮食不足！村民士气低落，今日防御 -2');
+  }
+
+  // 每 4 天一次劫掠
+  if (state.day % 4 === 0) {
+    const power = raidPower();
+    const def = defense() + (state.food <= 0 ? -2 : 0);
+
+    if (def >= power) {
+      const reward = power * 2;
+      state.gold += reward;
+      state.wood += 5;
+      addLog(`劫掠者来袭（强度 ${power}），防守成功！获得 ${reward} 金币、5 木材。`);
+    } else {
+      const rate = lossRate();
+      const lostGold = Math.floor(state.gold * rate);
+      const lostFood = Math.floor(state.food * rate);
+      const lostWood = Math.floor(state.wood * rate);
+      state.gold -= lostGold;
+      state.food -= lostFood;
+      state.wood -= lostWood;
+      addLog(`劫掠者来袭（强度 ${power} > 防御 ${def}），防守失败！损失 ${lostGold} 金币、${lostFood} 粮食、${lostWood} 木材。`);
+    }
+  }
+
+  if (state.day > 30) {
+    state.over = true;
+    addLog('你守住了边境驿村，撑过了 30 天。原型通关！');
+  }
+
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
